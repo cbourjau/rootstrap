@@ -6,27 +6,32 @@ import numpy as np
 from rootstrap import Bootstrapper, Collector
 from rootpy.io import root_open
 from rootpy.plotting import Hist1D
+from ROOT import TList, TObject
 
 
 class Test_end2end(TestCase):
     def setUp(self):
         for i in range(5):
-            with root_open("AnalysisResults{}.root".format(i), 'w') as f:
+            tl = TList()
+            with root_open("AnalysisResults{}.root".format(i), 'RECREATE') as f:
+                f.mkdir("dir")
+                f.cd("dir")
                 h_proton = Hist1D(3, 0, 3, name="proton_dist")
                 h_pion = Hist1D(3, 0, 3, name="pion_dist")
+
                 # + 1 so that we don't divide by 0 later on
                 [h_proton.Fill(x, i + 1) for x in range(h_proton.GetNbinsX())]
                 [h_pion.Fill(x, i + 1) for x in range(h_proton.GetNbinsX())]
-                h_proton.Write()
-                h_pion.Write()
-                f.Write()
+                tl.Add(h_proton)
+                tl.Add(h_pion)
+                tl.Write("list")
 
     def test_end2end(self):
         files = glob("./AnalysisResults*.root")
 
         bs = Bootstrapper()  # set other options here as well
-        bs.register("proton_dist", path="proton_dist")
-        bs.register("pion_dist", path="pion_dist")
+        bs.register("proton_dist", path="dir.list.proton_dist")
+        bs.register("pion_dist", path="dir.list.pion_dist")
         bs.read_files(files)
 
         proton_collector = Collector()

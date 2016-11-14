@@ -9,7 +9,7 @@ setup(
     description="Bootstrap a sample of histograms distributed over various root files",
     author='Christian Bourjau',
     author_email='christian.bourjau@cern.ch',
-    packages=['rootstrap', 'rootstrap.tests'],
+    packages=['rootstrap'],
     long_description=open('README.rst').read(),
     url='https://github.com/cbourjau/rootstrap',
     keywords=['alice'],

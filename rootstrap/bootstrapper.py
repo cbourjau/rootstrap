@@ -7,13 +7,13 @@ import ROOT
 def extract_hist_from_path(f, path):
     head = path.split(".")[0]
     tail = path.split(".")[1:]
-    obj = f.__getattr__(head)
+    obj = getattr(f, head, None)
     if obj is None:
         obj = f.FindObject(head)
     if isinstance(obj, (ROOT.TH1, ROOT.THnBase)):
         values, edges = hist2array(obj, return_edges=True)
     else:
-        values, edges = extract_hist_from_path(obj, tail)
+        values, edges = extract_hist_from_path(obj, ".".join(tail))
     # delete list before closing file because... root...
     obj.Delete()
     return values, edges
