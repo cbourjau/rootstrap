@@ -19,3 +19,4 @@
 
     print "Mean:", ratio_collector.mean
     print "Sigma:", ratio_collector.sigma  # assuming gaussian
+    print "Edges:", bs.proton_dist.edges
