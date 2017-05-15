@@ -1,11 +1,14 @@
 import numpy as np
+from rootpy.plotting import Hist1D, Hist2D, Hist3D
+from root_numpy import array2hist
 
 
 class Collector():
-    def __init__(self):
+    def __init__(self, edges=None):
         self.nentries = None
         self.sum = None
         self.square_sum = None
+        self.edges = edges
 
     def add(self, points):
         if self.nentries is None:
@@ -31,3 +34,18 @@ class Collector():
              (self.square_sum - self.nentries * (self.mean() ** 2))[self.nentries > 1])
         )
         return sigma.astype(np.float64)
+
+    def as_root_hist(self, invalid_fill_value=0):
+        if not self.edges:
+            raise ValueError("'edges' need to be set befor exporting to root hist")
+        if len(self.edges) == 1:
+            h = Hist1D(*self.edges, type='D')
+        elif len(self.edges) == 2:
+            h = Hist2D(*self.edges, type='D')
+        elif len(self.edges) == 3:
+            h = Hist3D(*self.edges, type='D')
+        else:
+            raise ValueError("Export to root histogram only supported for ndim <= 3")
+        array2hist(np.ma.fix_invalid(self.mean(), fill_value=invalid_fill_value), h,
+                   errors=np.ma.fix_invalid(self.sigma(), fill_value=0))
+        return h
