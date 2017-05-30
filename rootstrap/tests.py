@@ -9,7 +9,7 @@ from rootpy.plotting import Hist1D
 from ROOT import TList, TObject
 
 
-class Test_end2end(TestCase):
+class Test_bootstrapper(TestCase):
     def setUp(self):
         for i in range(5):
             tl = TList()
@@ -26,26 +26,59 @@ class Test_end2end(TestCase):
                 tl.Add(h_pion)
                 tl.Write("list")
 
+    def test_observables_edges(self):
+        """
+        Test the different ways of defining the observables edges
+        """
+        files = glob("./AnalysisResults*.root")
+        bs = Bootstrapper(files)
+        bs.register_histogram_source("proton_dist", path="dir.list.proton_dist")
+
+        def dummy_calc(bs):
+            pass
+        bs.register_observable(name='by_list', edges=[[1, 2, 3]], callback=dummy_calc)
+        np.testing.assert_array_equal([[1, 2, 3]], bs._obs_collectors['by_list'].edges)
+
+        bs.register_observable(name='by_source_name', edges='proton_dist', callback=dummy_calc)
+        np.testing.assert_array_equal([[0., 1., 2., 3.]], bs._obs_collectors['by_source_name'].edges)
+
+        def calc_edges(strapper):
+            return [[1, 2, 3]]
+        bs.register_observable('by_callback', edges=calc_edges, callback=dummy_calc)
+        np.testing.assert_array_equal([[1, 2, 3]], bs._obs_collectors['by_callback'].edges)
+
+    def test_static_sources(self):
+        """
+        Test initiation of static sources I.e., dead detector regions
+        which are infered from the full sample.
+        """
+        files = glob("./AnalysisResults*.root")
+        bs = Bootstrapper(files)
+        bs.register_histogram_source("proton_dist", path="dir.list.proton_dist")
+        bs.register_static_source('static', lambda bs: bs.sources['proton_dist'].integrated_sample())
+        np.testing.assert_array_equal(bs.static_sources['static'], [15, 15, 15])
+
     def test_end2end(self):
         files = glob("./AnalysisResults*.root")
 
-        bs = Bootstrapper()  # set other options here as well
-        bs.register("proton_dist", path="dir.list.proton_dist")
-        bs.register("pion_dist", path="dir.list.pion_dist")
-        bs.read_files(files)
+        bs = Bootstrapper(files)
+        bs.register_histogram_source("proton_dist", path="dir.list.proton_dist")
+        bs.register_histogram_source("pion_dist", path="dir.list.pion_dist")
 
-        proton_collector = Collector()
-        ratio_collector = Collector()
-        for i in range(10000):
-            bs.draw()  # set up a new bootstrapped sample
-            proton_collector.add(bs.proton_dist.values())
-            ratio_collector.add(bs.proton_dist.values() / bs.pion_dist.values())
+        def proton_pion_ration(strapper):
+            return strapper.sources['proton_dist'].values() / strapper.sources['proton_dist'].values()
 
+        bs.register_observable(name='ratio', edges='proton_dist', callback=proton_pion_ration)
+        bs.register_observable(name='protons',
+                               edges='proton_dist',
+                               callback=lambda bs: bs.sources['proton_dist'].values())
+
+        res = bs.bootstrap(100)
         # 5 samples; each bin is sum(range(5) + 1) == 15
-        mean, sigma = proton_collector.mean(), proton_collector.sigma()
+        mean, sigma = res['protons'].mean(), res['protons'].sigma()
         self.assertTrue(np.all(mean - sigma < np.array([15, 15, 15])))
         self.assertTrue(np.all(mean + sigma > np.array([15, 15, 15])))
-        np.testing.assert_array_equal(ratio_collector.mean(), np.array([1., 1., 1.]))
+        np.testing.assert_array_equal(res['ratio'].mean(), np.array([1., 1., 1.]))
 
 
 class Test_collector(TestCase):

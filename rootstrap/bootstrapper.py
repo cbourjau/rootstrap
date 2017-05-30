@@ -1,10 +1,12 @@
 import multiprocessing
+from collections import OrderedDict
 
 import numpy as np
 from root_numpy import hist2array
 from rootpy.io import root_open
-
 import ROOT
+
+from .collector import Collector
 
 
 def _extract_hist_from_path(args):
@@ -31,9 +33,10 @@ def _extract_hist_from_path(args):
 
 
 class Sample_set():
-    def __init__(self, path, bootstrapper):
+    def __init__(self, path, bootstrapper, files):
         self.path = path
         self.bootstrapper = bootstrapper
+        self._read_files(files)
 
     def values(self):
         try:
@@ -41,7 +44,16 @@ class Sample_set():
         except AttributeError:
             raise RuntimeError("Call Bootstrapper.draw first")
 
-    def read_files(self, files):
+    def integrated_sample(self):
+        """
+        Sums all samples together.
+        """
+        return np.sum(self.values_set, axis=-1, dtype=np.float64)
+
+    def _read_files(self, files):
+        """
+        Read in the full sample set and initiate the edges.
+        """
         with root_open(files[0], 'READ') as f:
             values, self.edges = _extract_hist_from_path([f, self.path])
         self.values_set = np.zeros(shape=(values.shape + (len(files), )), dtype=np.float64)
@@ -54,19 +66,27 @@ class Sample_set():
 
 
 class Bootstrapper():
-    def __init__(self):
-        self.sample_sets = []
-        # list of all registered sources as `Sample_set`
-        self.sources = []
-        # list of all static sources and their set-up callbacks (name, callback)
-        self.static_sources = []
-        # list of all registered observable callbacks as tuples: (name, callback)
-        # This has to be a list since the order matters
-        self._obs_callback = []
+    def __init__(self, files):
+        # list of files which will be bootstrapped
+        self.files = files
+        # dict of all registered sources as `Sample_set`
+        self.sources = {}
+        # dict of all static sources and their set-up callbacks
+        self.static_sources = {}
+        # OrderedDict of all registered observable callbacks. The
+        # order is important since latter calculation may depend on
+        # earlier ones. Order is determined by the order the callbacks
+        # were registered in
+        self._obs_callbacks = OrderedDict()
         # Dictionary of all the observables `Collector`s
         self._obs_collectors = {}
         # Function called to compute sample weights
         self.sample_weight = lambda cls: 1
+        # dictionary with values of observables from the current
+        # iteration This dictionary is reset at every iteration. It is
+        # ment to be used for observable callbacks to access results
+        # from previous calculations
+        self.current_observables = {}
 
     def register_histogram_source(self, name, path):
         """
@@ -78,8 +98,7 @@ class Bootstrapper():
             The name under which the given source will be accessable
         path : Path to the histogram within the root file
         """
-        setattr(self, name, Sample_set(path, self))
-        self.sample_sets.append(getattr(self, name))
+        self.sources[name] = Sample_set(path, self, self.files)
 
     def register_observable(self, name, edges, callback):
         """
@@ -100,7 +119,16 @@ class Bootstrapper():
             Called once per iteration. Must return an nd.array of
             dimensionality fitting to the observables bin edges.
         """
-        pass
+        self._obs_callbacks[name] = callback
+        if isinstance(edges, str):
+            _source_edges = self.sources[edges].edges
+            self._obs_collectors[name] = Collector(edges=_source_edges)
+        elif isinstance(edges, (list, tuple)):
+            self._obs_collectors[name] = Collector(edges=edges)
+        elif callable(edges):
+            self._obs_collectors[name] = Collector(edges=edges(self))
+        else:
+            raise ValueError("`edges` has invalid type {}".format(type(edges)))
 
     def register_static_source(self, name, callback):
         """
@@ -113,9 +141,9 @@ class Bootstrapper():
         name : str
             The name under which the given source will be accessable
         callback : function
-            Called once with access to all the histograms. Must return `[values, edges]`
+            Called once with access to all the histograms. Must return np.ndarray of values
         """
-        self.static_sources.append((name, callback))
+        self.static_sources[name] = callback(self)
 
     def register_sample_weight(self, callback):
         """
@@ -148,22 +176,23 @@ class Bootstrapper():
             self._draw()
             # dictionary with values of observables from the current iteration
             self.current_observables = {}
-            for name, cback in self._obs_callbacks:
-                self.current_observables[name] = cback(self)
+            for name, cback in self._obs_callbacks.items():
+                _tmp = cback(self)
+                # cache the results for latter calculations in this iteration
+                self.current_observables[name] = _tmp
+                # add the result to the respective collector to keep track of the mean and sigma
+                self._obs_collectors[name].add(_tmp)
 
         result = {}
-        for name, col in self._obs_collectors:
+        print self._obs_callbacks
+        for name, col in self._obs_collectors.items():
             result[name] = col
         return result
 
-    def read_files(self, files):
-        self.nsamples = len(files)
-        for s in self.sample_sets:
-            s.read_files(files)
-
     def _draw(self):
-        indices, counts = np.unique(np.random.choice(self.nsamples, size=self.nsamples),
+        nsamples = len(self.files)
+        indices, counts = np.unique(np.random.choice(nsamples, size=nsamples),
                                     return_counts=True)
         # create an array with weights for each sub-sample item
-        self.current_weights = np.zeros(shape=(self.nsamples, ), dtype=np.int)
+        self.current_weights = np.zeros(shape=(nsamples, ), dtype=np.int)
         self.current_weights[indices] = counts
