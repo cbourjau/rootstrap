@@ -2,6 +2,7 @@ import multiprocessing
 from collections import OrderedDict
 
 import numpy as np
+from tqdm import trange
 from root_numpy import hist2array
 from rootpy.io import root_open
 import ROOT
@@ -73,15 +74,13 @@ class Bootstrapper():
         self.sources = {}
         # dict of all static sources and their set-up callbacks
         self.static_sources = {}
-        # OrderedDict of all registered observable callbacks. The
-        # order is important since latter calculation may depend on
-        # earlier ones. Order is determined by the order the callbacks
-        # were registered in
+        # OrderedDict of all registered observable callbacks and the
+        # function to comput the sample weight. The order is important
+        # since latter calculation may depend on earlier ones. Order
+        # is determined by the order the callbacks were registered in
         self._obs_callbacks = OrderedDict()
         # Dictionary of all the observables `Collector`s
         self._obs_collectors = {}
-        # Function called to compute sample weights
-        self.sample_weight = lambda cls: 1
         # dictionary with values of observables from the current
         # iteration This dictionary is reset at every iteration. It is
         # ment to be used for observable callbacks to access results
@@ -100,7 +99,7 @@ class Bootstrapper():
         """
         self.sources[name] = Sample_set(path, self, self.files)
 
-    def register_observable(self, name, edges, callback):
+    def register_observable(self, name, edges, callback, weight=lambda _: 1):
         """
         Register an observable which will be calculated in each iteration
 
@@ -118,8 +117,13 @@ class Bootstrapper():
         callback : fn (this) -> ndarray
             Called once per iteration. Must return an nd.array of
             dimensionality fitting to the observables bin edges.
+        weight : fn (this) -> scalar or np.ndarray
+            Weight which is applied for a given sample when passing it
+            to the `Collector` (usually number of events). Return
+            value has to be broadcastable to the shape of the
+            observable
         """
-        self._obs_callbacks[name] = callback
+        self._obs_callbacks[name] = (callback, weight)
         if isinstance(edges, str):
             _source_edges = self.sources[edges].edges
             self._obs_collectors[name] = Collector(edges=_source_edges)
@@ -145,20 +149,6 @@ class Bootstrapper():
         """
         self.static_sources[name] = callback(self)
 
-    def register_sample_weight(self, callback):
-        """
-        Register the logic for calculating a given iteration's sample
-        weight. If this function is not called, all samples are
-        weighted equally. Usually one would like to weight a sample by
-        e.g. number of events
-
-        Parameters
-        ----------
-        callback : function
-            Function called once per iteration. Must return a scalar value
-        """
-        self.sample_weight = callback
-
     def bootstrap(self, ntimes):
         """
         Bootstrap this configuration `ntimes`.
@@ -172,16 +162,16 @@ class Bootstrapper():
         -------
         dict : Dictionary of all the registered observables
         """
-        for n in range(ntimes):
+        for n in trange(ntimes):
             self._draw()
             # dictionary with values of observables from the current iteration
             self.current_observables = {}
-            for name, cback in self._obs_callbacks.items():
+            for name, (cback, weight) in self._obs_callbacks.items():
                 _tmp = cback(self)
                 # cache the results for latter calculations in this iteration
                 self.current_observables[name] = _tmp
                 # add the result to the respective collector to keep track of the mean and sigma
-                self._obs_collectors[name].add(_tmp)
+                self._obs_collectors[name].add(_tmp, weight(self))
 
         result = {}
         print self._obs_callbacks

@@ -1,3 +1,4 @@
+tqdm
 numpy
 rootpy
 root_numpy

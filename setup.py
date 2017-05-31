@@ -1,6 +1,6 @@
 from setuptools import setup
 
-install_requires = ['numpy', 'root_numpy', 'rootpy']
+install_requires = ['tqdm', 'numpy', 'root_numpy', 'rootpy']
 tests_require = ['nose']
 
 setup(
