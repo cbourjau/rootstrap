@@ -84,9 +84,27 @@ class Test_bootstrapper(TestCase):
 class Test_collector(TestCase):
     def test_mean(self):
         points = np.linspace(0, 10, num=50)
-        print points
         c = Collector()
         [c.add([p]) for p in points]
+        self.assertEqual(np.mean(points), c.mean()[0])
+        self.assertLessEqual(np.std(points) * 0.98, c.sigma()[0])
+        self.assertLessEqual(c.sigma()[0], np.std(points) * 1.02)
+
+    def test_add_nan_values(self):
+        points = np.linspace(0, 10, num=50)
+        c = Collector()
+        # add as list, this is only a single point
+        [c.add([p]) for p in points]
+        c.add([np.nan])
+        self.assertEqual(np.mean(points), c.mean()[0])
+        self.assertLessEqual(np.std(points) * 0.98, c.sigma()[0])
+        self.assertLessEqual(c.sigma()[0], np.std(points) * 1.02)
+
+    def test_add_weights(self):
+        points = np.linspace(0, 10, num=50)
+        c = Collector()
+        # equal weight for all points should not matter (copied from mean test)
+        [c.add([p], weight=2) for p in points]
         self.assertEqual(np.mean(points), c.mean()[0])
         self.assertLessEqual(np.std(points) * 0.98, c.sigma()[0])
         self.assertLessEqual(c.sigma()[0], np.std(points) * 1.02)

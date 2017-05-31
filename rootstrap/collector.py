@@ -10,15 +10,18 @@ class Collector():
         self.square_sum = None
         self.edges = edges
 
-    def add(self, points):
+    def add(self, points, weight=1):
+        points = np.array(points)
         if self.nentries is None:
             self.nentries = np.zeros_like(points).astype(np.float128)
             self.sum = np.zeros_like(points).astype(np.float128)
             self.square_sum = np.zeros_like(points).astype(np.float128)
 
-        self.sum += np.ma.fix_invalid(points, fill_value=0)
-        self.square_sum += np.ma.fix_invalid(points, fill_value=0)**2
-        self.nentries[~np.isnan(points)] += 1
+        self.sum += np.ma.fix_invalid(points * weight, fill_value=0)
+        self.square_sum += np.ma.fix_invalid(points, fill_value=0)**2 * weight
+        # Only increas counts in the non-nan bins, but we have to make
+        # sure the weights broadcast correctly
+        self.nentries[~np.isnan(points)] += (np.ones_like(points) * weight)[~np.isnan(points)]
 
     def mean(self):
         mean = np.copy(self.sum)
