@@ -162,7 +162,7 @@ class Bootstrapper():
         -------
         dict : Dictionary of all the registered observables
         """
-        for n in trange(ntimes):
+        for n in trange(ntimes, desc="Bootsrapping"):
             self._draw()
             # dictionary with values of observables from the current iteration
             self.current_observables = {}
@@ -174,7 +174,6 @@ class Bootstrapper():
                 self._obs_collectors[name].add(_tmp, weight(self))
 
         result = {}
-        print self._obs_callbacks
         for name, col in self._obs_collectors.items():
             result[name] = col
         return result
