@@ -163,7 +163,7 @@ class Bootstrapper():
         -------
         dict : Dictionary of all the registered observables
         """
-        for n in trange(ntimes):
+        for n in trange(ntimes, desc="Bootsrapping"):
             self._draw()
             # dictionary with values of observables from the current iteration
             self.current_observables = {}
