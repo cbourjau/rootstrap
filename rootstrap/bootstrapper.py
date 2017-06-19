@@ -33,11 +33,11 @@ def _extract_hist_from_path(args):
     return values, edges
 
 
-class Sample_set():
-    def __init__(self, path, bootstrapper, files):
+class _Sample_set():
+    def __init__(self, path, bootstrapper, files, nworkers):
         self.path = path
         self.bootstrapper = bootstrapper
-        self._read_files(files)
+        self._read_files(files, nworkers)
 
     def values(self):
         try:
@@ -51,14 +51,13 @@ class Sample_set():
         """
         return np.sum(self.values_set, axis=-1, dtype=np.float64)
 
-    def _read_files(self, files):
+    def _read_files(self, files, nworkers):
         """
         Read in the full sample set and initiate the edges.
         """
         with root_open(files[0], 'READ') as f:
             values, self.edges = _extract_hist_from_path([f, self.path])
         self.values_set = np.zeros(shape=(values.shape + (len(files), )), dtype=np.float64)
-        nworkers = 10
         pool = multiprocessing.Pool(nworkers)
         values_edges = pool.map(_extract_hist_from_path, zip(files, [self.path] * len(files)))
         for iset, (values, _) in enumerate(values_edges):
@@ -67,10 +66,12 @@ class Sample_set():
 
 
 class Bootstrapper():
-    def __init__(self, files):
+    def __init__(self, files, nworkers):
+        # Number of parallel threads for the IO of the root files.
+        self.nworkers = nworkers
         # list of files which will be bootstrapped
         self.files = files
-        # dict of all registered sources as `Sample_set`
+        # dict of all registered sources as `_Sample_set`
         self.sources = {}
         # dict of all static sources and their set-up callbacks
         self.static_sources = {}
@@ -97,7 +98,7 @@ class Bootstrapper():
             The name under which the given source will be accessable
         path : Path to the histogram within the root file
         """
-        self.sources[name] = Sample_set(path, self, self.files)
+        self.sources[name] = _Sample_set(path, self, self.files, nworkers=self.nworkers)
 
     def register_observable(self, name, edges, callback, weight=lambda _: 1):
         """
@@ -174,7 +175,6 @@ class Bootstrapper():
                 self._obs_collectors[name].add(_tmp, weight(self))
 
         result = {}
-        print self._obs_callbacks
         for name, col in self._obs_collectors.items():
             result[name] = col
         return result
